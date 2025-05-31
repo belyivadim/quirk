@@ -1,0 +1,5 @@
+experiments
+compile_flags.txt
+*.out
+*.o
+
