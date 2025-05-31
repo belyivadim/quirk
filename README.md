@@ -24,8 +24,8 @@ This is part of a broader system aimed at giving C programs LINQ-style capabilit
 
 Copy `quirk.h` into your project and include it:
 
-#define QUIRK_IMPLEMENTATION // to act as a C file
 ```c
+#define QUIRK_IMPLEMENTATION // to act as a C file
 #include "quirk.h"
 ```
 
@@ -36,12 +36,12 @@ More information about usage you can find in examples directory.
 
 ## Dependencies
 
-- Requires SQLite (`sqlite3.h`)
-- Uses one other my library called `cghost` (primarily for memory managment and string operations): [cghost repo](https://github.com/belyivadim/cghost)
+- Requires SQLite (`sqlite3.h`) so link with `-lsqlite3`
+- Uses one other my library called `cghost` (primarily for memory management and string operations): [`cghost repo`](https://github.com/belyivadim/cghost)
 
 ## Example
 
-See [`simple_crud.c`](./simple_crud.c) for a complete working example that:
+See [`simple_crud.c`](./examples/simple_crud.c) for a complete working example that:
 
 - Initializes a database (not a part of the library)
 - Creates a table (not a part of the library)
@@ -57,4 +57,4 @@ See [`simple_crud.c`](./simple_crud.c) for a complete working example that:
 
 ## License
 
-MIT License
+[`MIT License`](./LICENSE)
