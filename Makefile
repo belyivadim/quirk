@@ -1,8 +1,6 @@
 .PHONY: examples
 .PHONY: clean
 
-clean:
-	rm -f simple_crud.out
 examples: simple_crud.out
 
 simple_crud.out: examples/simple_crud.c

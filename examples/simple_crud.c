@@ -65,6 +65,7 @@ void init_test_db(const QkStructMapping *mapping) {
   qk_map_struct_to_cols_and_values(&notes[3], mapping, NULL, &params.items[3]);
 
   QkSqlQuery q = qk_sql_insert_many(STR("notes"), columns, params);
+  qk_sql_conflic_resolution(&q, QK_CONFLICT_IGNORE);
 
   qk_sql_exec_sqlite(&q, db, NULL);
 

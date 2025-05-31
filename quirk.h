@@ -22,6 +22,15 @@ typedef enum {
 } QkOp;
 
 typedef enum {
+  QK_CONFLICT_NONE, // Default
+  QK_CONFLICT_ROLLBACK,
+  QK_CONFLICT_ABORT,
+  QK_CONFLICT_FAIL,
+  QK_CONFLICT_IGNORE,
+  QK_CONFLICT_REPLACE,
+} QkConflictResolution;
+
+typedef enum {
   QK_FILT_NONE,
   QK_FILT_EQ,
   QK_FILT_NEQ,
@@ -88,16 +97,17 @@ DA_DECL_TYPE(QkSqlCond, QkSqlCondArr)
 
 typedef struct QkSqlQuery {
   QkOp op;
+  QkConflictResolution conflic;
 
   Str table;
 
-  // used for select
+  // used for select, update
   StrArr columns;
 
-  // used for select
+  // used for select, update, delete
   QkSqlCondArr where;
 
-  // used for insert
+  // used for insert, update
   QkParamRows param_rows;
 
   struct {
@@ -170,6 +180,7 @@ QkSqlQuery qk_sql_insert(Str table, StrArr columns, QkParamArr params);
 QkSqlQuery qk_sql_insert_many(Str table, StrArr columns,
                               QkParamRows param_rows);
 QkSqlQuery qk_sql_delete(Str table);
+void qk_sql_conflic_resolution(QkSqlQuery *q, QkConflictResolution conflic);
 void qk_sql_where(QkSqlQuery *q, QkFilter filt, Str column, QkParam param);
 void qk_sql_order_by(QkSqlQuery *q, Str column, QkOrder order);
 void qk_sql_limit(QkSqlQuery *q, int limit);
@@ -260,6 +271,11 @@ QkSqlQuery qk_sql_delete(Str table) {
   };
 }
 
+void qk_sql_conflic_resolution(QkSqlQuery *q, QkConflictResolution conflic) {
+  assert(q->conflic == QK_CONFLICT_NONE);
+  q->conflic = conflic;
+}
+
 void qk_sql_where(QkSqlQuery *q, QkFilter filt, Str column, QkParam param) {
   QkSqlCond c =
       (QkSqlCond){.cv = {.column = column, .param = param}, .filt = filt};
@@ -279,13 +295,36 @@ void qk_sql_limit(QkSqlQuery *q, int limit) {
   q->limit = limit;
 }
 
-bool qk_sql_build(QkSqlQuery *q, QkSqlDialect dialect) {
+static void qk_sql_add_conflic_resolution(QkSqlQuery *q, QkSqlDialect dialect) {
   (void)dialect;
+  switch (q->conflic) {
+  case QK_CONFLICT_NONE:
+    return;
+  case QK_CONFLICT_ROLLBACK:
+    sb_append_cstr(&q->b, "OR ROLLBACK ");
+    return;
+  case QK_CONFLICT_ABORT:
+    sb_append_cstr(&q->b, "OR ABORT ");
+    return;
+  case QK_CONFLICT_FAIL:
+    sb_append_cstr(&q->b, "OR FAIL ");
+    return;
+  case QK_CONFLICT_IGNORE:
+    sb_append_cstr(&q->b, "OR IGNORE ");
+    return;
+  case QK_CONFLICT_REPLACE:
+    sb_append_cstr(&q->b, "OR REPLACE ");
+    return;
+  }
+}
+
+bool qk_sql_build(QkSqlQuery *q, QkSqlDialect dialect) {
   q->b.count = 0;
 
   switch (q->op) {
   case QK_SELECT: {
     sb_append_cstr(&q->b, "SELECT ");
+    qk_sql_add_conflic_resolution(q, dialect);
     for (size_t i = 0; i < q->columns.count; i += 1) {
       if (i > 0)
         sb_append_cstr(&q->b, ", ");
@@ -297,6 +336,7 @@ bool qk_sql_build(QkSqlQuery *q, QkSqlDialect dialect) {
 
   case QK_UPDATE: {
     sb_append_cstr(&q->b, "UPDATE ");
+    qk_sql_add_conflic_resolution(q, dialect);
     sb_append_str(&q->b, &q->table);
     sb_append_cstr(&q->b, " SET ");
     if (q->param_rows.count != 1 ||
@@ -310,7 +350,9 @@ bool qk_sql_build(QkSqlQuery *q, QkSqlDialect dialect) {
   } break;
 
   case QK_INSERT: {
-    sb_append_cstr(&q->b, "INSERT INTO ");
+    sb_append_cstr(&q->b, "INSERT ");
+    qk_sql_add_conflic_resolution(q, dialect);
+    sb_append_cstr(&q->b, "INTO ");
     sb_append_str(&q->b, &q->table);
     sb_append_cstr(&q->b, " (");
     for (size_t i = 0; i < q->columns.count; i += 1) {
@@ -340,7 +382,9 @@ bool qk_sql_build(QkSqlQuery *q, QkSqlDialect dialect) {
     }
   } break;
   case QK_DELETE:
-    sb_appendf(&q->b, "DELETE FROM %.*s", str_expand(q->table));
+    sb_append_cstr(&q->b, "DELETE");
+    qk_sql_add_conflic_resolution(q, dialect);
+    sb_appendf(&q->b, "FROM %.*s", str_expand(q->table));
     break;
   }
 
@@ -448,7 +492,7 @@ bool qk_sql_exec_sqlite(QkSqlQuery *q, sqlite3 *db, QkResultSet *out) {
     return false;
 
   const char *sql = sb_get_cstr(&q->b);
-  // printf("Executing SQL: %s\n", sql);
+  printf("Executing SQL: %s\n", sql);
 
   sqlite3_stmt *stmt = NULL;
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
